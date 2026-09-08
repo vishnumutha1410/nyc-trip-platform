@@ -142,7 +142,7 @@ def main() -> None:
     n_valid = valid.count()
     n_quarantine = quarantine.count()
 
-    (valid.write.mode("overwrite")
+    (valid.repartition("pickup_year", "pickup_month").write.mode("overwrite")
           .partitionBy("pickup_year", "pickup_month")
           .parquet(curated_path))
     if n_quarantine:
