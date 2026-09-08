@@ -14,7 +14,7 @@ QUALITY_RULES = [
     ("distance_positive",     "trip_distance > 0"),
     ("distance_plausible",    "trip_distance < 300"),
     ("pickup_before_dropoff", "pickup_datetime < dropoff_datetime"),
-    ("duration_plausible",    "datediff('second', pickup_datetime, dropoff_datetime) < 43200"),
+    ("duration_plausible",    "dropoff_datetime < pickup_datetime + INTERVAL 12 HOUR"),
     ("passenger_count_sane",  "passenger_count IS NULL OR passenger_count BETWEEN 0 AND 9"),
     ("zones_present",         "pickup_location_id IS NOT NULL AND dropoff_location_id IS NOT NULL"),
     ("pickup_after_2009",     "pickup_datetime >= TIMESTAMP '2009-01-01'"),

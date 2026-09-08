@@ -73,7 +73,7 @@ def build_spark() -> SparkSession:
         .config("spark.sql.shuffle.partitions", "16")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.hadoop.fs.s3a.aws.credentials.provider",
-                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
+                "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
         .config("spark.jars.packages",
                 "org.apache.hadoop:hadoop-aws:3.3.4,"
                 "com.amazonaws:aws-java-sdk-bundle:1.12.262")
