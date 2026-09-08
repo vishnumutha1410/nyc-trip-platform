@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: raw
+    database: NYC_PLATFORM
+    schema: RAW
+    tables:
+      - name: raw_trips
+        description: Curated trip records landed from S3 by the PySpark job.
+        loaded_at_field: _loaded_at
+        freshness:
+          warn_after: {count: 36, period: hour}
+          error_after: {count: 72, period: hour}
+        columns:
+          - name: pickup_datetime
+            tests: [not_null]
+          - name: pickup_location_id
+            tests: [not_null]

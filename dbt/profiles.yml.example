@@ -1,0 +1,15 @@
+# Copy to ~/.dbt/profiles.yml and fill in. Never commit the real one.
+nyc_trip_platform:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'NYC_PLATFORM_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'NYC_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_PLATFORM') }}"
+      schema: staging
+      threads: 4
+      client_session_keep_alive: False

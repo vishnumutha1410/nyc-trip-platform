@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: fct_trips
+    description: |
+      Grain: one completed taxi trip.
+      Foreign keys to dim_zone (pickup and dropoff), dim_date, dim_vendor,
+      dim_rate_code and dim_payment_type.
+    tests:
+      # The test that catches silent join loss - see docs/01-tools-explained.md
+      - dbt_utils.equal_rowcount:
+          compare_model: ref('stg_trips')
+    columns:
+      - name: trip_key
+        tests: [not_null, unique]
+      - name: pickup_zone_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_zone')
+              field: zone_id
+      - name: dropoff_zone_key
+        tests:
+          - relationships:
+              to: ref('dim_zone')
+              field: zone_id
+      - name: payment_type_key
+        tests:
+          - relationships:
+              to: ref('dim_payment_type')
+              field: payment_type_id
+      - name: pickup_date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: total_amount
+        tests: [not_null]
+
+  - name: dim_zone
+    columns:
+      - name: zone_id
+        tests: [not_null, unique]
+  - name: dim_vendor
+    columns:
+      - name: vendor_id
+        tests: [not_null, unique]
+  - name: dim_payment_type
+    columns:
+      - name: payment_type_id
+        tests: [not_null, unique]
+  - name: dim_rate_code
+    columns:
+      - name: rate_code_id
+        tests: [not_null, unique]
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [not_null, unique]

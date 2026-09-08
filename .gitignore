@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+spark-warehouse/
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+profiles.yml
+.DS_Store

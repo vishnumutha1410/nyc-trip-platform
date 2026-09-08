@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_trips
+    description: One row per trip, renamed and typed. No business logic.
+    columns:
+      - name: trip_key
+        description: Deterministic surrogate key.
+        tests: [not_null]
+      - name: pickup_at
+        tests: [not_null]
+      - name: total_amount
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10000
+      - name: trip_distance
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
