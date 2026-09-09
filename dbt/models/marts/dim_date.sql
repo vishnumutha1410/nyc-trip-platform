@@ -2,7 +2,7 @@
 -- The difference matters: a day with zero trips still needs a row, or your
 -- time series silently skips it and a chart shows a line where there is a gap.
 
-{% set start_date = "2015-01-01" %}
+{% set start_date = "2009-01-01" %}
 
 with spine as (
 

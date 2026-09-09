@@ -72,6 +72,7 @@ def build_spark() -> SparkSession:
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.shuffle.partitions", "16")
         .config("spark.sql.parquet.compression.codec", "snappy")
+            .config("spark.sql.parquet.outputTimestampType", "TIMESTAMP_MICROS")
         .config("spark.hadoop.fs.s3a.aws.credentials.provider",
                 "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
         .config("spark.jars.packages",
