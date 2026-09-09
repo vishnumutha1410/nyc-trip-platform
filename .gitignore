@@ -9,3 +9,4 @@ dbt/dbt_packages/
 dbt/logs/
 profiles.yml
 .DS_Store
+spark-tmp/
