@@ -165,3 +165,60 @@ for the full argument, including when Spark is the wrong choice.
 ## License
 
 MIT
+
+## Measured results
+
+First full run, `yellow_tripdata_2024-01`, on a laptop (WSL2, Spark local mode,
+3GB driver):
+
+| | |
+|---|---|
+| Rows read from source | 2,964,624 |
+| Rows curated | 2,868,390 |
+| Rows quarantined | 96,234 (3.25%) |
+| Curated output | 4 Parquet files, 63.7 MB |
+| dbt models | 7 |
+| dbt tests | 28, all passing |
+
+### Why rows were quarantined
+
+| Rule | Rows |
+|---|---|
+| `distance_positive` | 56,948 |
+| `fare_not_negative` | 37,448 |
+| `duration_plausible` | 1,580 |
+| `total_not_negative` | 120 |
+| `pickup_before_dropoff` | 112 |
+| `distance_plausible` | 25 |
+| `pickup_after_2009` | 1 |
+
+Zero-distance trips are the single largest cause: roughly 2% of a month of New
+York taxi rides went nowhere.
+
+Spark and DuckDB produce identical counts across all ten rules, which is the
+point of defining them once as shared SQL strings.
+
+## Defects found and fixed during the first run
+
+**Trips dated 2002 in a 2024 file.** Inspecting the raw Parquet showed 5 rows
+outside the source month, two dated 2002-12-31. Added a rule rejecting pickups
+before 2009, when TLC records begin. Boundary rows spilling into the adjacent
+months are legitimate and deliberately not gated.
+
+**Timestamps silently misread by a factor of 1,000,000.** `COPY INTO` with
+`MATCH_BY_COLUMN_NAME` loaded 2,868,390 rows successfully and reported no
+errors, but read Spark's microsecond timestamps as seconds, producing years
+like 39006190. The row count was exactly right the whole time. Fixed by
+converting explicitly with `TO_TIMESTAMP_NTZ(value, 6)`, and now verified by
+recomputing trip duration from the stored timestamps and comparing it against
+the value Spark wrote.
+
+**Cross-engine SQL dialect break.** `datediff()` takes a quoted unit in DuckDB
+and an unquoted one in Spark, so a shared rule string passed the tests and
+failed in the Spark job. Replaced with an `INTERVAL` comparison, valid in both.
+The real constraint on sharing rules across engines is that they must stay
+inside the SQL subset both understand — and the test suite is what enforces it.
+
+**One file per input task.** A 3-row partition was written as 3 files of ~6KB,
+almost entirely Parquet metadata. Repartitioning on the partition columns
+before write collapsed 8 files to 4.

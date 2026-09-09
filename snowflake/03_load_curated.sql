@@ -1,11 +1,15 @@
--- Load curated Parquet from S3 into the RAW schema.
+-- Load curated Parquet from S3 into RAW.
 --
--- MATCH_BY_COLUMN_NAME means Snowflake maps parquet fields to table columns
--- by name rather than position, so a new column appearing upstream does not
--- silently shift every value one column to the left.
+-- Timestamps are converted EXPLICITLY rather than by inference. Spark writes
+-- them as INT64 microseconds since epoch; MATCH_BY_COLUMN_NAME reads that as
+-- seconds and produces years like 39006190 with no error. Verified against the
+-- real data: the misread was exactly 1,000,000x.
 --
--- COPY INTO is idempotent by default: Snowflake tracks which files it has
--- already loaded and skips them. Re-running this is safe.
+-- TO_TIMESTAMP_NTZ(<value>, 6) states the scale, so nothing has to guess.
+--
+-- PATTERN excludes Spark's empty _SUCCESS marker, which COPY would otherwise
+-- try to parse as Parquet and fail on. ON_ERROR stays ABORT_STATEMENT so a
+-- genuinely corrupt file still stops the load loudly.
 
 USE ROLE NYC_PLATFORM_ROLE;
 USE WAREHOUSE NYC_WH;
@@ -35,8 +39,6 @@ CREATE TABLE IF NOT EXISTS RAW_TRIPS (
     cbd_congestion_fee     FLOAT,
     pickup_date            DATE,
     trip_duration_seconds  NUMBER,
-    pickup_year            NUMBER,
-    pickup_month           NUMBER,
     _loaded_at             TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
@@ -45,14 +47,44 @@ COPY INTO RAW_TRIPS (
     rate_code_id, store_and_fwd_flag, pickup_location_id, dropoff_location_id,
     payment_type, fare_amount, extra, mta_tax, tip_amount, tolls_amount,
     improvement_surcharge, total_amount, congestion_surcharge, airport_fee,
-    cbd_congestion_fee, pickup_date, trip_duration_seconds, pickup_year, pickup_month
+    cbd_congestion_fee, pickup_date, trip_duration_seconds
 )
-FROM @CURATED_STAGE
+FROM (
+    SELECT
+        $1:vendor_id::NUMBER,
+        TO_TIMESTAMP_NTZ($1:pickup_datetime::NUMBER, 6),
+        TO_TIMESTAMP_NTZ($1:dropoff_datetime::NUMBER, 6),
+        $1:passenger_count::NUMBER,
+        $1:trip_distance::FLOAT,
+        $1:rate_code_id::NUMBER,
+        $1:store_and_fwd_flag::VARCHAR,
+        $1:pickup_location_id::NUMBER,
+        $1:dropoff_location_id::NUMBER,
+        $1:payment_type::NUMBER,
+        $1:fare_amount::FLOAT,
+        $1:extra::FLOAT,
+        $1:mta_tax::FLOAT,
+        $1:tip_amount::FLOAT,
+        $1:tolls_amount::FLOAT,
+        $1:improvement_surcharge::FLOAT,
+        $1:total_amount::FLOAT,
+        $1:congestion_surcharge::FLOAT,
+        $1:airport_fee::FLOAT,
+        $1:cbd_congestion_fee::FLOAT,
+        $1:pickup_date::DATE,
+        $1:trip_duration_seconds::NUMBER
+    FROM @CURATED_STAGE
+)
 FILE_FORMAT = (TYPE = PARQUET)
-MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+PATTERN = '.*[.]parquet'
 ON_ERROR = ABORT_STATEMENT;
 
-SELECT count(*) AS rows_loaded,
-       min(pickup_datetime) AS earliest,
-       max(pickup_datetime) AS latest
+-- Correctness check: recompute duration from the stored timestamps and compare
+-- against what Spark calculated before the write. Zero means they round-tripped.
+SELECT
+    count(*)             AS rows_loaded,
+    min(pickup_datetime) AS earliest,
+    max(pickup_datetime) AS latest,
+    count_if(DATEDIFF(second, pickup_datetime, dropoff_datetime)
+             <> trip_duration_seconds) AS duration_mismatches
 FROM RAW_TRIPS;
