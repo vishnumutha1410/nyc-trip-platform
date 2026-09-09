@@ -79,7 +79,7 @@ explicitly non-additive and named so nobody sums them.
 
 ## Data quality
 
-Eight rules run during curation, defined once in `spark/jobs/rules.py` as SQL
+Ten rules run during curation, defined once in `spark/jobs/rules.py` as SQL
 predicates. Spark applies them; the test suite runs the identical strings
 against DuckDB. One definition, two engines, no drift between the rule that is
 documented and the rule that ships.
@@ -94,6 +94,8 @@ documented and the rule that ships.
 | `duration_plausible` | Over 12 hours |
 | `passenger_count_sane` | Impossible occupancy |
 | `zones_present` | Missing pickup or dropoff zone |
+| `pickup_after_2009` | Impossible dates - caught 2002-dated rows in a 2024 file |
+| `pickup_not_in_future` | Pickup timestamps in the future |
 
 Failing rows go to `s3://<bucket>/quarantine/trips/` with a `_quality_failure`
 column naming the first rule they broke. A drop in curated row count is always
