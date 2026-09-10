@@ -96,7 +96,7 @@ def check_no_loss(con, ends: dict[str, int]) -> list[str]:
                             f"first few {gaps[:10]}")
             print(f"    MISSING        : {len(gaps)}  {gaps[:10]}")
         else:
-            print(f"    missing        : 0")
+            print("    missing        : 0")
     return problems
 
 

@@ -54,7 +54,6 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
-from typing import Iterable
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 from dotenv import load_dotenv

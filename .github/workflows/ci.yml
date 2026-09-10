@@ -1,0 +1,100 @@
+name: CI
+
+# Runs on every push and every pull request. Nothing here needs AWS or
+# Snowflake credentials - that is the design constraint, not a limitation.
+# A test suite that can only run where the secrets are is a suite that stops
+# being run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A second push to the same branch cancels the first run still in flight.
+  # Without this, pushing three times in a minute queues three full runs and
+  # you wait for answers about code you have already replaced.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - name: ruff
+        run: ruff check .
+
+  unit:
+    name: unit tests (no credentials)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest duckdb confluent-kafka
+
+      # The CDC parser tests feed synthetic Debezium envelopes straight into
+      # parse(). No broker, no warehouse, ~0.1s. Two of them assert the exact
+      # failures you would see with REPLICA IDENTITY left at its default and
+      # with a no-op UPDATE, both of which are real behaviours this pipeline
+      # has met.
+      #
+      # The dbt tests execute the project's REAL model SQL against DuckDB, with
+      # ref(), source() and generate_surrogate_key resolved by a small Jinja
+      # renderer. That is the part worth stealing: model logic gets tested on
+      # every push instead of only when someone remembers to run dbt against a
+      # warehouse.
+      - name: pytest
+        run: pytest tests/ -q
+
+  dags:
+    name: airflow dag integrity
+    runs-on: ubuntu-latest
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Airflow must be installed with its constraints file. Without it, pip
+      # resolves a combination of pinned libraries that does not work.
+      - name: install airflow
+        run: |
+          python -m pip install --upgrade pip
+          pip install "apache-airflow==2.10.5" pytest \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt"
+
+      # A broken DAG file does not raise anywhere you will see it. The
+      # scheduler catches the exception, writes it to an Import Errors panel,
+      # and carries on scheduling every other DAG - so a typo means this
+      # pipeline silently stops running while everything looks normal, until
+      # someone asks where the data went. This job is what makes that loud.
+      - name: dag integrity
+        run: pytest airflow/tests/test_dag_integrity.py -q
+
+  # Deliberately absent: any job that touches S3, Snowflake or a live Kafka
+  # broker. Those need credentials, cost money per run, and would make the
+  # build red for reasons that have nothing to do with the commit. The
+  # integration checks that do need real systems - the chaos test and
+  # reconciliation - are run locally and on purpose:
+  #
+  #     make -f Makefile.cdc cdc-chaos
+  #     make -f Makefile.cdc cdc-reconcile
