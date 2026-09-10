@@ -229,7 +229,7 @@ def main() -> int:
     con = duckdb.connect(DUCKDB, read_only=True)
     pg = psycopg2.connect(DSN)
 
-    print("\n=== NO LOSS: every kafka offset landed ===")
+    print("\n=== NO LOSS: every kafka offset accounted for ===")
     problems = check_no_loss(con, ends)
     print("\n=== NO DUPLICATES: merge on event_uid held ===")
     problems += check_no_duplicates(con)
