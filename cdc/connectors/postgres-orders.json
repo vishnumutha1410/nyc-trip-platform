@@ -1,0 +1,28 @@
+{
+  "name": "orders-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "orders",
+    "database.password": "orders",
+    "database.dbname": "ordersdb",
+
+    "topic.prefix": "ordersdb",
+    "table.include.list": "public.customers,public.orders",
+
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "publication.autocreate.mode": "disabled",
+    "slot.name": "dbz_orders_slot",
+
+    "snapshot.mode": "initial",
+
+    "decimal.handling.mode": "double",
+    "time.precision.mode": "connect",
+
+    "tombstones.on.delete": "false",
+    "heartbeat.interval.ms": "10000"
+  }
+}

@@ -10,3 +10,6 @@ dbt/logs/
 profiles.yml
 .DS_Store
 spark-tmp/
+
+# local cdc warehouse
+warehouse/*.duckdb

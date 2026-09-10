@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: cdc
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'NYC_TRIPS') }}"
+    schema: RAW
+    description: >
+      Append-only landing table written by cdc/consume_changes.py. One row per
+      Debezium change event, with the before/after images kept as raw JSON text
+      exactly as they arrived. Nothing here is interpreted - that happens in the
+      models below, where a mistake can be fixed by rerunning instead of by
+      replaying Kafka.
+    tables:
+      - name: cdc_events
+        columns:
+          - name: event_uid
+            description: topic:partition:offset - Kafka's own unique address for the message.
+            data_tests: [unique, not_null]
+          - name: lsn
+            description: >
+              Postgres log sequence number. The ordering key for everything
+              downstream. Not ts_ms - two commits in the same millisecond share
+              a timestamp, and wall clocks are not monotonic.
+            data_tests: [not_null]
+          - name: op
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['c', 'u', 'd', 'r']

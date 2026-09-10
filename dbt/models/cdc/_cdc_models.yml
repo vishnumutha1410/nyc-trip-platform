@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: stg_cdc_customers
+    description: One typed row per customer change event. No filtering.
+    columns:
+      - name: event_uid
+        data_tests: [unique, not_null]
+      - name: customer_id
+        description: From the after image, or the before image for deletes.
+        data_tests: [not_null]
+
+  - name: stg_cdc_orders
+    columns:
+      - name: event_uid
+        data_tests: [unique, not_null]
+      - name: order_id
+        data_tests: [not_null]
+
+  - name: dim_customer_history
+    description: >
+      Type 2 slowly changing dimension. One row per customer per version, with
+      half-open validity windows (valid_from inclusive, valid_to exclusive).
+    columns:
+      - name: customer_version_key
+        description: Surrogate key on (customer_id, lsn) - unique per version.
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests: [not_null]
+      - name: valid_from
+        data_tests: [not_null]
+      - name: tier
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['bronze', 'silver', 'gold', 'platinum']
+
+  - name: fct_orders_current
+    description: Latest non-deleted state of every order, from the change log.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer_history')
+                field: customer_id
+      - name: amount
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1000
+
+  - name: fct_orders_with_tier_at_purchase
+    description: >
+      Orders joined to the customer version in force at the time of the order.
+    data_tests:
+      # The point of this test: a Type 2 join that matches two versions
+      # produces MORE rows than it started with, and nothing errors. Comparing
+      # the row count against fct_orders_current is the only thing that notices.
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('fct_orders_current')
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: tier_at_purchase
+        data_tests: [not_null]
