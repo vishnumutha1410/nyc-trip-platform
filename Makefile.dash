@@ -1,0 +1,9 @@
+# Phase 4 target.  make -f Makefile.dash dash
+
+.PHONY: dash dash-install
+
+dash-install:      ## streamlit + charting deps into the project venv
+	uv pip install streamlit altair "snowflake-connector-python[pandas]"
+
+dash:              ## open the dashboard at localhost:8501
+	streamlit run dashboards/app.py
