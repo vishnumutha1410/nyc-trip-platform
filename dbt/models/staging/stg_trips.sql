@@ -56,3 +56,13 @@ renamed as (
 )
 
 select * from renamed
+
+-- TLC publishes a small number of exactly duplicated trip records - identical
+-- in every column, three pairs in 39.7M rows for 2024. Nothing in the file
+-- uniquely identifies a trip, so a surrogate key built from attributes cannot
+-- distinguish a duplicate record from a duplicate key.
+--
+-- Deduplicating here is a deliberate exception to "staging does no business
+-- logic": it is the earliest point where the duplicate is visible, and
+-- carrying it into the fact table would silently double-count those trips.
+qualify row_number() over (partition by trip_key order by _loaded_at) = 1
