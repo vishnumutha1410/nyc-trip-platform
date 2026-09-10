@@ -1,0 +1,48 @@
+# Phase 3 targets.  make -f Makefile.airflow <target>
+#
+# Airflow lives in its own virtualenv (see docs/phase3-airflow.md for why).
+AIRFLOW_VENV ?= $(HOME)/airflow-venv
+AIRFLOW      := $(AIRFLOW_VENV)/bin/airflow
+AF_PY        := $(AIRFLOW_VENV)/bin/python
+export AIRFLOW_HOME ?= $(HOME)/airflow
+
+.PHONY: af-install af-init af-up af-dags af-test af-lint-dags af-trigger-batch \
+        af-trigger-cdc af-pause-all af-list-runs
+
+af-install:        ## create the airflow venv and install with constraints
+	uv venv $(AIRFLOW_VENV) --python 3.11
+	$(AIRFLOW_VENV)/bin/python -m ensurepip --upgrade || true
+	uv pip install --python $(AIRFLOW_VENV)/bin/python \
+	  "apache-airflow==2.10.5" pytest \
+	  --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt"
+
+af-init:           ## point airflow at this repo's dags folder
+	mkdir -p $(AIRFLOW_HOME)
+	$(AIRFLOW) db migrate
+	$(AF_PY) airflow/configure.py
+
+af-up:             ## start scheduler + webserver (UI on :8080)
+	@echo "NOTE: Redpanda Console also uses :8080 - stop it or move one."
+	PATH="$(AIRFLOW_VENV)/bin:$$PATH" $(AIRFLOW) standalone
+
+af-dags:           ## list dags and any import errors
+	$(AIRFLOW) dags list
+	@echo "--- import errors ---"
+	$(AIRFLOW) dags list-import-errors
+
+af-test:           ## DAG integrity tests
+	$(AF_PY) -m pytest airflow/tests/test_dag_integrity.py -q
+
+af-trigger-batch:
+	$(AIRFLOW) dags trigger nyc_trips_batch
+
+af-trigger-cdc:
+	$(AIRFLOW) dags trigger cdc_micro_batch
+
+af-list-runs:
+	$(AIRFLOW) dags list-runs -d nyc_trips_batch
+	$(AIRFLOW) dags list-runs -d cdc_micro_batch
+
+af-pause-all:
+	$(AIRFLOW) dags pause nyc_trips_batch
+	$(AIRFLOW) dags pause cdc_micro_batch
