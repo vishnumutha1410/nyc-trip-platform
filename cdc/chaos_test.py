@@ -20,9 +20,11 @@ WHY SIGKILL AND NOT CTRL-C
     auto-committed, this test would lose data every single run.
 
 THE THREE ASSERTIONS
-    NO LOSS         every Kafka offset from 0 to the log end is present in the
-                    landing table. Not "counts look close" - every individual
-                    offset, so a gap anywhere is caught by name.
+    NO LOSS         every Kafka offset from 0 to the log end is accounted for:
+                    either landed in the warehouse, or parked in the dead-letter
+                    topic with a reason. Landed and dead-lettered are both fine.
+                    Unaccounted is not. Not "counts look close" - every
+                    individual offset, so a gap is caught by name.
     NO DUPLICATES   count(*) == count(distinct event_uid). At-least-once
                     delivery means replays definitely happened; the MERGE on
                     event_uid is what makes them harmless.
@@ -59,6 +61,7 @@ DSN = os.getenv("ORDERS_DSN",
 DUCKDB = os.getenv("CDC_DUCKDB", "warehouse/cdc.duckdb")
 BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPICS = ["ordersdb.public.customers", "ordersdb.public.orders"]
+DLQ_TOPIC = "cdc.dlq"
 PY = sys.executable
 
 
@@ -80,23 +83,65 @@ def log_end_offsets() -> dict[str, int]:
         c.close()
 
 
+def dlq_offsets() -> dict[str, set[int]]:
+    """Which source offsets were deliberately dead-lettered.
+
+    A message parked in the DLQ is HANDLED, not lost - it has a reason
+    attached and enough context to replay. Counting it as data loss makes
+    this test cry wolf every time the dead-letter path does its job, and a
+    test that fails for correct behaviour is a test people switch off.
+    """
+    parked: dict[str, set[int]] = {t: set() for t in TOPICS}
+    c = Consumer({"bootstrap.servers": BOOTSTRAP, "group.id": "chaos-dlq-probe",
+                  "enable.auto.commit": False, "auto.offset.reset": "earliest"})
+    try:
+        tp = TopicPartition(DLQ_TOPIC, 0, 0)
+        try:
+            _, end = c.get_watermark_offsets(tp, timeout=10)
+        except Exception:
+            return parked          # topic does not exist yet - nothing parked
+        if not end or end <= 0:
+            return parked
+        c.assign([tp])
+        seen = 0
+        while seen < end:
+            msg = c.poll(5.0)
+            if msg is None:
+                break
+            if msg.error():
+                continue
+            seen += 1
+            try:
+                rec = json.loads(msg.value())
+                if rec.get("topic") in parked:
+                    parked[rec["topic"]].add(int(rec["offset"]))
+            except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+                continue
+    finally:
+        c.close()
+    return parked
+
+
 def check_no_loss(con, ends: dict[str, int]) -> list[str]:
-    """Every offset in [0, log_end) must be in the landing table."""
+    """Every offset in [0, log_end) is accounted for: landed OR dead-lettered."""
     problems = []
+    parked = dlq_offsets()
     for topic, end in ends.items():
         landed = {r[0] for r in con.execute(
             "select kafka_offset from cdc_events where kafka_topic = ?", [topic]
         ).fetchall()}
-        gaps = sorted(set(range(end)) - landed)
+        dead = parked.get(topic, set())
+        gaps = sorted(set(range(end)) - landed - dead)
         print(f"  {topic}")
         print(f"    log end offset : {end:,}")
         print(f"    offsets landed : {len(landed):,}")
+        print(f"    dead-lettered  : {len(dead):,}")
         if gaps:
-            problems.append(f"{topic}: {len(gaps)} missing offsets, "
+            problems.append(f"{topic}: {len(gaps)} unaccounted offsets, "
                             f"first few {gaps[:10]}")
-            print(f"    MISSING        : {len(gaps)}  {gaps[:10]}")
+            print(f"    UNACCOUNTED    : {len(gaps)}  {gaps[:10]}")
         else:
-            print("    missing        : 0")
+            print("    unaccounted    : 0")
     return problems
 
 
