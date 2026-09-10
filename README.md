@@ -170,15 +170,19 @@ MIT
 
 ## Measured results
 
-First full run, `yellow_tripdata_2024-01`, on a laptop (WSL2, Spark local mode,
-3GB driver):
+Full year of 2024 yellow taxi data, run on a laptop (WSL2, Spark local mode,
+3GB driver, XSMALL Snowflake warehouse):
 
 | | |
 |---|---|
-| Rows read from source | 2,964,624 |
-| Rows curated | 2,868,390 |
-| Rows quarantined | 96,234 (3.25%) |
-| Curated output | 4 Parquet files, 63.7 MB |
+| Source files | 12 monthly TLC Parquet files |
+| Rows read | 41,169,720 |
+| Rows curated | 39,692,972 |
+| Rows quarantined | 1,476,748 (3.59%) |
+| Rows in `fct_trips` | 39,692,969 |
+| Curated output | 13 Parquet files, 929 MB |
+| Curation runtime | ~28 min |
+| `fct_trips` build | 56 s |
 | dbt models | 7 |
 | dbt tests | 28, all passing |
 
@@ -186,41 +190,76 @@ First full run, `yellow_tripdata_2024-01`, on a laptop (WSL2, Spark local mode,
 
 | Rule | Rows |
 |---|---|
-| `distance_positive` | 56,948 |
-| `fare_not_negative` | 37,448 |
-| `duration_plausible` | 1,580 |
-| `total_not_negative` | 120 |
-| `pickup_before_dropoff` | 112 |
-| `distance_plausible` | 25 |
-| `pickup_after_2009` | 1 |
+| `fare_not_negative` | 731,023 |
+| `distance_positive` | 720,062 |
+| `duration_plausible` | 19,365 |
+| `total_not_negative` | 2,861 |
+| `pickup_before_dropoff` | 2,364 |
+| `distance_plausible` | 1,016 |
+| `pickup_outside_source_month` | 49 |
+| `total_plausible` | 8 |
 
-Zero-distance trips are the single largest cause: roughly 2% of a month of New
+Zero-distance trips are the single largest cause: roughly 2% of a year of New
 York taxi rides went nowhere.
 
-Spark and DuckDB produce identical counts across all ten rules, which is the
-point of defining them once as shared SQL strings.
+Rows are attributed to the **first** rule they violate, not every rule, so these
+counts shift if the rule order changes.
 
-## Defects found and fixed during the first run
+Spark and DuckDB produce identical counts across every row-local rule, which is
+the point of defining them once as shared SQL strings.
 
-**Trips dated 2002 in a 2024 file.** Inspecting the raw Parquet showed 5 rows
-outside the source month, two dated 2002-12-31. Added a rule rejecting pickups
-before 2009, when TLC records begin. Boundary rows spilling into the adjacent
-months are legitimate and deliberately not gated.
+## Defects found and fixed
 
-**Timestamps silently misread by a factor of 1,000,000.** `COPY INTO` with
-`MATCH_BY_COLUMN_NAME` loaded 2,868,390 rows successfully and reported no
-errors, but read Spark's microsecond timestamps as seconds, producing years
-like 39006190. The row count was exactly right the whole time. Fixed by
-converting explicitly with `TO_TIMESTAMP_NTZ(value, 6)`, and now verified by
-recomputing trip duration from the stored timestamps and comparing it against
-the value Spark wrote.
+Seven, and **not one of them threw an error**. Every single one was caught by
+comparing something against something else.
 
-**Cross-engine SQL dialect break.** `datediff()` takes a quoted unit in DuckDB
+**Trips dated 2002 in a 2024 file.** Inspecting the raw Parquet showed rows
+outside the source month, two dated 2002-12-31.
+
+**A cross-engine SQL dialect break.** `datediff()` takes a quoted unit in DuckDB
 and an unquoted one in Spark, so a shared rule string passed the tests and
 failed in the Spark job. Replaced with an `INTERVAL` comparison, valid in both.
 The real constraint on sharing rules across engines is that they must stay
-inside the SQL subset both understand — and the test suite is what enforces it.
+inside the SQL subset both understand, and the test suite is what enforces it.
 
-**One file per input task.** A 3-row partition was written as 3 files of ~6KB,
-almost entirely Parquet metadata. Repartitioning on the partition columns
-before write collapsed 8 files to 4.
+**Timestamps misread by exactly 1,000,000x.** `COPY INTO` with
+`MATCH_BY_COLUMN_NAME` loaded every row successfully and reported no errors,
+but read Spark's microsecond timestamps as seconds, producing years like
+39006190. The row count was exactly right the whole time. Caught by recomputing
+trip duration from the stored timestamps and comparing it against the value
+Spark wrote before the file was even written. That comparison is now part of
+the load.
+
+**One file written per input task.** A 3-row partition became 3 files of ~6KB,
+almost entirely Parquet metadata. Repartitioning on the partition columns before
+write fixed it.
+
+**Spark spilling into a RAM disk.** The 12-month shuffle died with "No space
+left on device" while 951GB of disk sat unused - `spark.local.dir` defaults to
+`/tmp`, which on WSL is a 1.9GB tmpfs.
+
+**A $335,550.94 taxi fare.** `total_not_negative` only bounded the lower end.
+The dbt `accepted_range` test on staging caught it and correctly blocked
+`fct_trips` from building on top. The ceiling of $5,000 derives from the
+existing 300-mile distance cap, not from taste.
+
+**Duplicate records with no natural key.** TLC publishes byte-identical trip
+records - three pairs in 39.7M rows. Nothing in the file uniquely identifies a
+trip, so a surrogate key built from attributes cannot distinguish a duplicated
+record from a duplicated key. Deduplicated in staging, which is the earliest
+point the duplicate is visible.
+
+## Source-month alignment: a check that cannot be row-local
+
+Ten of the eleven rules examine one row and ask whether its values are sane. A
+trip dated 2026-06 passes all of them - it is a perfectly plausible trip. It is
+only wrong because it arrived in a file of 2024-01 data.
+
+Spark knows the source month from the raw path's Hive partition
+(`raw/yellow/year=2024/month=01/`), so the job carries it through and compares
+each pickup date against that month with a 3-day tolerance for genuine boundary
+spill - a trip starting at 23:58 on the last day of a month belongs in the next
+month's partition and appears in TLC files routinely.
+
+Caught 49 rows across 41.2M, and eliminated five S3 partitions that existed
+solely to hold a handful of misfiled rows. Output partitions: 18 -> 13.
