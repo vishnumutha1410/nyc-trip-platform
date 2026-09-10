@@ -1,3 +1,5 @@
+[![CI](https://github.com/vishnumutha1410/nyc-trip-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/vishnumutha1410/nyc-trip-platform/actions/workflows/ci.yml)
+
 # NYC Trip Platform
 
 An end-to-end data platform built on real NYC TLC taxi data and a simulated
