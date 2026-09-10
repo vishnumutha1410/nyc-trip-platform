@@ -11,6 +11,7 @@ documented and the rule you shipped.
 QUALITY_RULES = [
     ("fare_not_negative",     "fare_amount >= 0"),
     ("total_not_negative",    "total_amount >= 0"),
+    ("total_plausible",       "total_amount < 5000"),
     ("distance_positive",     "trip_distance > 0"),
     ("distance_plausible",    "trip_distance < 300"),
     ("pickup_before_dropoff", "pickup_datetime < dropoff_datetime"),
