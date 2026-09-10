@@ -1,0 +1,24 @@
+# Rule selection is explicit and the version is pinned in CI.
+#
+# With neither, `ruff check .` means "whatever this version of ruff thinks
+# today", and a linter release can turn the build red without anyone touching
+# the code. A lint gate that fails for reasons unrelated to the commit is a
+# lint gate people start ignoring.
+
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes: unused imports, undefined names - real bugs
+    "I",   # import sorting
+    "B",   # bugbear: mutable default args, loop variable capture
+    "UP",  # pyupgrade
+]
+
+[lint.per-file-ignores]
+# Test modules put the repo root on sys.path before importing project code,
+# which is unavoidable without packaging the project.
+"tests/**" = ["E402"]
+"airflow/tests/**" = ["E402"]

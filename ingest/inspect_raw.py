@@ -4,7 +4,9 @@ The rules come from spark/jobs/rules.py - the exact strings Spark uses. So the
 quarantine rate printed here is the real one, not an estimate.
 """
 import sys
+
 import duckdb
+
 from spark.jobs.rules import failure_reason_expression, valid_row_expression
 
 RAW = sys.argv[1] if len(sys.argv) > 1 else "data/raw/yellow_tripdata_2024-01.parquet"

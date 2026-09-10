@@ -24,8 +24,9 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.bash import BashOperator
+
+from airflow import DAG
 
 PROJECT_DIR = os.getenv("NYC_PROJECT_DIR", os.path.expanduser("~/nyc-trip-platform"))
 PROJECT_PY = os.getenv("NYC_PROJECT_PYTHON", f"{PROJECT_DIR}/.venv/bin/python")

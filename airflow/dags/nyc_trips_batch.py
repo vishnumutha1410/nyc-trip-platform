@@ -32,9 +32,10 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
+
+from airflow import DAG
 
 # Where the project lives and which interpreter runs its jobs. Both overridable
 # so the DAG is not hard-coded to one laptop.
